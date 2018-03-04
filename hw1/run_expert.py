@@ -68,5 +68,9 @@ def main():
         expert_data = {'observations': np.array(observations),
                        'actions': np.array(actions)}
 
+    print(expert_data)
+    print(expert_data['observations'].shape, expert_data['actions'].shape)
+    np.save("{}_{}".format(args.envname, args.num_rollouts),expert_data)
+
 if __name__ == '__main__':
     main()

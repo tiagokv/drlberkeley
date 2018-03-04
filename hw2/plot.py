@@ -52,6 +52,7 @@ def plot_data(data, value="AverageReturn"):
     if isinstance(data, list):
         data = pd.concat(data, ignore_index=True)
     sns.set(style="darkgrid", font_scale=1.5)
+    # print(data)
     sns.tsplot(data=data, time="Iteration", value=value, unit="Unit", condition="Condition")
     plt.legend(loc='best').draggable()
     plt.show()
@@ -62,11 +63,11 @@ def get_datasets(fpath, condition=None):
     datasets = []
     for root, dir, files in os.walk(fpath):
         if 'log.txt' in files:
-            param_path = open(os.path.join(root,'params.json'))
+            param_path = open(os.path.join(root, 'params.json'))
             params = json.load(param_path)
             exp_name = params['exp_name']
             
-            log_path = os.path.join(root,'log.txt')
+            log_path = os.path.join(root, 'log.txt')
             experiment_data = pd.read_table(log_path)
 
             experiment_data.insert(
@@ -79,7 +80,6 @@ def get_datasets(fpath, condition=None):
                 'Condition',
                 condition or exp_name
                 )
-
             datasets.append(experiment_data)
             unit += 1
 
