@@ -11,7 +11,8 @@ import copy
 import matplotlib.pyplot as plt
 from cheetah_env import HalfCheetahEnvNew
 
-def sample(env, 
+
+def sample(env: gym.Env,
            controller, 
            num_paths=10, 
            horizon=1000, 
@@ -24,18 +25,58 @@ def sample(env,
     """
     paths = []
     """ YOUR CODE HERE """
+    for path in range(num_paths):
+        path_obs = []
+        path_act = []
+        path_next_obs = []
+        path_rewards = []
+        path_returns = []
+
+        obs = env.reset()
+        for h in range(horizon):
+            path_obs.append(obs)
+            act = controller.get_action(obs)
+            path_act.append(act)
+            next_obs, rew, done, rets = env.step(act)
+            if render:
+                env.render()
+            path_next_obs.append(next_obs)
+            path_rewards.append(rew)
+            path_returns.append(rets)
+            if done:
+                break
+            obs = next_obs
+
+        paths.append({'obs': np.array(path_obs),
+                      'act': np.array(path_act),
+                      'next_obs': np.array(path_next_obs),
+                      'rew': np.array(path_rewards),
+                      'ret': np.array(path_returns)})
 
     return paths
+
 
 # Utility to compute cost a path for a given cost function
 def path_cost(cost_fn, path):
     return trajectory_cost_fn(cost_fn, path['observations'], path['actions'], path['next_observations'])
+
 
 def compute_normalization(data):
     """
     Write a function to take in a dataset and compute the means, and stds.
     Return 6 elements: mean of s_t, std of s_t, mean of (s_t+1 - s_t), std of (s_t+1 - s_t), mean of actions, std of actions
     """
+    obs_concat = np.concatenate([data[i]['obs'] for i in range(len(data))])
+    mean_obs = obs_concat.mean()
+    std_obs = obs_concat.std()
+
+    deltas = np.concatenate([data[i]['obs'] - data[i]['next_obs'] for i in range(len(data))])
+    mean_deltas = deltas.mean()
+    std_deltas = deltas.std()
+
+    act_concat = np.concatenate([data[i]['act'] for i in range(len(data))])
+    mean_action = act_concat.mean()
+    std_action = act_concat.std()
 
     """ YOUR CODE HERE """
     return mean_obs, std_obs, mean_deltas, std_deltas, mean_action, std_action
@@ -43,29 +84,31 @@ def compute_normalization(data):
 
 def plot_comparison(env, dyn_model):
     """
-    Write a function to generate plots comparing the behavior of the model predictions for each element of the state to the actual ground truth, using randomly sampled actions. 
+    Write a function to generate plots comparing the behavior of the model predictions for each element of the state to
+    the actual ground truth, using randomly sampled actions.
     """
     """ YOUR CODE HERE """
     pass
 
+
 def train(env, 
-         cost_fn,
-         logdir=None,
-         render=False,
-         learning_rate=1e-3,
-         onpol_iters=10,
-         dynamics_iters=60,
-         batch_size=512,
-         num_paths_random=10, 
-         num_paths_onpol=10, 
-         num_simulated_paths=10000,
-         env_horizon=1000, 
-         mpc_horizon=15,
-         n_layers=2,
-         size=500,
-         activation=tf.nn.relu,
-         output_activation=None
-         ):
+          cost_fn,
+          logdir=None,
+          render=False,
+          learning_rate=1e-3,
+          onpol_iters=10,
+          dynamics_iters=60,
+          batch_size=512,
+          num_paths_random=10,
+          num_paths_onpol=10,
+          num_simulated_paths=10000,
+          env_horizon=1000,
+          mpc_horizon=15,
+          n_layers=2,
+          size=500,
+          activation=tf.nn.relu,
+          output_activation=None
+          ):
 
     """
 
@@ -112,7 +155,7 @@ def train(env,
     random_controller = RandomController(env)
 
     """ YOUR CODE HERE """
-
+    random_rollouts = sample(env, random_controller, num_paths_random, env_horizon, render)
 
     #========================================================
     # 
@@ -122,8 +165,7 @@ def train(env,
     # for normalizing inputs and denormalizing outputs
     # from the dynamics network. 
     # 
-    normalization = """ YOUR CODE HERE """
-
+    normalization = compute_normalization(random_rollouts)
 
     #========================================================
     # 
@@ -158,13 +200,22 @@ def train(env,
 
     #========================================================
     # 
-    # Take multiple iterations of onpolicy aggregation at each iteration refitting the dynamics model to current dataset and then taking onpolicy samples and aggregating to the dataset. 
-    # Note: You don't need to use a mixing ratio in this assignment for new and old data as described in https://arxiv.org/abs/1708.02596
-    # 
+    # Take multiple iterations of onpolicy aggregation at each iteration refitting the dynamics model to current
+    # dataset and then taking onpolicy samples and aggregating to the dataset.
+    # Note: You don't need to use a mixing ratio in this assignment for new and old data
+    # as described in https://arxiv.org/abs/1708.02596
+    #
+    rollouts = random_rollouts
+
     for itr in range(onpol_iters):
         """ YOUR CODE HERE """
+        losses = dyn_model.fit(rollouts)
 
+        onp_data = sample(env, mpc_controller, num_paths_onpol, env_horizon, render)
+        returns = [onp_data[i]['rew'] for i in range(len(onp_data))]
+        costs = [trajectory_cost_fn(cost_fn, traj['obs'], traj['act'], traj['next_obs']) for traj in onp_data]
 
+        rollouts.extend(onp_data)
 
         # LOGGING
         # Statistics for performance of MPC policy using
@@ -182,6 +233,7 @@ def train(env,
         logz.log_tabular('MaximumReturn', np.max(returns))
 
         logz.dump_tabular()
+
 
 def main():
 
@@ -202,11 +254,13 @@ def main():
     parser.add_argument('--onpol_paths', '-d', type=int, default=10)
     parser.add_argument('--simulated_paths', '-sp', type=int, default=1000)
     parser.add_argument('--ep_len', '-ep', type=int, default=1000)
+
     # Neural network architecture args
     parser.add_argument('--n_layers', '-l', type=int, default=2)
     parser.add_argument('--size', '-s', type=int, default=500)
     # MPC Controller
     parser.add_argument('--mpc_horizon', '-m', type=int, default=15)
+
     args = parser.parse_args()
 
     # Set seed
@@ -222,27 +276,29 @@ def main():
         os.makedirs(logdir)
 
     # Make env
-    if args.env_name is "HalfCheetah-v1":
+    if args.env_name == "HalfCheetah-v2":
         env = HalfCheetahEnvNew()
         cost_fn = cheetah_cost_fn
+
     train(env=env, 
-                 cost_fn=cost_fn,
-                 logdir=logdir,
-                 render=args.render,
-                 learning_rate=args.learning_rate,
-                 onpol_iters=args.onpol_iters,
-                 dynamics_iters=args.dyn_iters,
-                 batch_size=args.batch_size,
-                 num_paths_random=args.random_paths, 
-                 num_paths_onpol=args.onpol_paths, 
-                 num_simulated_paths=args.simulated_paths,
-                 env_horizon=args.ep_len, 
-                 mpc_horizon=args.mpc_horizon,
-                 n_layers = args.n_layers,
-                 size=args.size,
-                 activation=tf.nn.relu,
-                 output_activation=None,
-                 )
+          cost_fn=cost_fn,
+          logdir=logdir,
+          render=args.render,
+          learning_rate=args.learning_rate,
+          onpol_iters=args.onpol_iters,
+          dynamics_iters=args.dyn_iters,
+          batch_size=args.batch_size,
+          num_paths_random=args.random_paths,
+          num_paths_onpol=args.onpol_paths,
+          num_simulated_paths=args.simulated_paths,
+          env_horizon=args.ep_len,
+          mpc_horizon=args.mpc_horizon,
+          n_layers= args.n_layers,
+          size=args.size,
+          activation=tf.nn.relu,
+          output_activation=None
+          )
+
 
 if __name__ == "__main__":
     main()

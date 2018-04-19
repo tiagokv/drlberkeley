@@ -52,12 +52,15 @@ def configure_output_dir(d=None):
     """
     G.output_dir = d or "/tmp/experiments/%i"%int(time.time())
     if osp.exists(G.output_dir):
-        print("Log dir %s already exists! Delete it first or use a different dir"%G.output_dir)
+        print("Log dir %s already exists! Delete it first or use a different dir" % G.output_dir)
     else:
         os.makedirs(G.output_dir)
     G.output_file = open(osp.join(G.output_dir, "log.txt"), 'w')
     atexit.register(G.output_file.close)
     print(colorize("Logging data to %s"%G.output_file.name, 'green', bold=True))
+    G.first_row = True
+    G.log_headers = []
+    G.log_current_row = {}
 
 def log_tabular(key, val):
     """

@@ -7,6 +7,7 @@ import tensorflow                as tf
 import tensorflow.contrib.layers as layers
 from collections import namedtuple
 from dqn_utils import *
+import time
 
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
 
@@ -129,6 +130,19 @@ def learn(env,
     
     # YOUR CODE HERE
 
+    q_values = q_func(obs_t_float, num_actions, scope="q_func", reuse=False)
+    q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func')
+    q_max_value = tf.argmax(q_values, axis=1)
+
+    target_q_values = q_func(obs_tp1_float, num_actions, scope="target_q_func", reuse=False)
+    target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func')
+
+    y = rew_t_ph + (1 - done_mask_ph) * gamma * tf.reduce_max(target_q_values, axis=1)
+
+    q_value_act = tf.reduce_sum(q_values * tf.one_hot(act_t_ph, num_actions), axis=1)  # tf.gather_nd(q_values, tf.stack([tf.range(tf.shape(q_values)[0]), act_t_ph], axis=1))
+
+    total_error = tf.losses.mean_squared_error(y, q_value_act)
+
     ######
 
     # construct optimization op (with gradient clipping)
@@ -156,6 +170,12 @@ def learn(env,
     best_mean_episode_reward = -float('inf')
     last_obs = env.reset()
     LOG_EVERY_N_STEPS = 10000
+
+    max_upd_time = 0
+    max_act_time = 0
+    max_train_time = 0
+    max_spl_time = 0
+    max_tot_time = 0
 
     for t in itertools.count():
         ### 1. Check stopping criterion
@@ -195,7 +215,23 @@ def learn(env,
         #####
         
         # YOUR CODE HERE
+        idx = replay_buffer.store_frame(last_obs)
+        if not model_initialized:
+            action = env.action_space.sample()
+        else:
+            epsilon = exploration.value(t)
+            if np.random.binomial(1, epsilon):  # success is to go random on actions
+                action = env.action_space.sample()
+            else:
+                state = replay_buffer.encode_recent_observation()
+                action = session.run(q_max_value,
+                                     feed_dict={obs_t_ph: state[np.newaxis, :]})
+        last_obs, reward, done, info = env.step(action)
 
+        replay_buffer.store_effect(idx, action, reward, done)
+
+        if done:
+            last_obs = env.reset()
         #####
 
         # at this point, the environment should have been advanced one step (and
@@ -245,6 +281,25 @@ def learn(env,
             #####
             
             # YOUR CODE HERE
+            # 3.a
+            obs_batch, act_batch, rew_batch, next_obs_batch, done_mask_batch = replay_buffer.sample(batch_size)
+            # 3.b
+            if not model_initialized:
+                initialize_interdependent_variables(session, tf.global_variables(), {
+                    obs_t_ph: obs_batch,
+                    obs_tp1_ph: next_obs_batch,
+                })
+                model_initialized = True
+
+            # 3.c
+            _ = session.run([train_fn], feed_dict={obs_t_ph: obs_batch, act_t_ph: act_batch,
+                                                   rew_t_ph: rew_batch, obs_tp1_ph: next_obs_batch,
+                                                   done_mask_ph: done_mask_batch,
+                                                   learning_rate: optimizer_spec.lr_schedule.value(t)})
+
+            num_param_updates += 1
+            if num_param_updates % target_update_freq == 0:
+                session.run(update_target_fn)
 
             #####
 
@@ -261,4 +316,5 @@ def learn(env,
             print("episodes %d" % len(episode_rewards))
             print("exploration %f" % exploration.value(t))
             print("learning_rate %f" % optimizer_spec.lr_schedule.value(t))
+
             sys.stdout.flush()
