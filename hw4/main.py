@@ -70,7 +70,7 @@ def compute_normalization(data):
     mean_obs = obs_concat.mean()
     std_obs = obs_concat.std()
 
-    deltas = np.concatenate([data[i]['obs'] - data[i]['next_obs'] for i in range(len(data))])
+    deltas = np.concatenate([data[i]['next_obs'] - data[i]['obs'] for i in range(len(data))])
     mean_deltas = deltas.mean()
     std_deltas = deltas.std()
 
@@ -209,9 +209,14 @@ def train(env,
 
     for itr in range(onpol_iters):
         """ YOUR CODE HERE """
+        counter_fit = time.time()        
         losses = dyn_model.fit(rollouts)
+        counter_fit = time.time() - counter_fit
 
+        counter_sample = time.time()
         onp_data = sample(env, mpc_controller, num_paths_onpol, env_horizon, render)
+        counter_sample = time.time() - counter_sample
+
         returns = [onp_data[i]['rew'] for i in range(len(onp_data))]
         costs = [trajectory_cost_fn(cost_fn, traj['obs'], traj['act'], traj['next_obs']) for traj in onp_data]
 
@@ -232,6 +237,10 @@ def train(env,
         logz.log_tabular('MinimumReturn', np.min(returns))
         logz.log_tabular('MaximumReturn', np.max(returns))
 
+        #How much times does it take to certain operations
+        logz.log_tabular('CounterFit', counter_fit)
+        logz.log_tabular('CounterSample', counter_sample)
+
         logz.dump_tabular()
 
 
@@ -239,7 +248,7 @@ def main():
 
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default='HalfCheetah-v1')
+    parser.add_argument('--env_name', type=str, default='HalfCheetah-v2')
     # Experiment meta-params
     parser.add_argument('--exp_name', type=str, default='mb_mpc')
     parser.add_argument('--seed', type=int, default=3)
