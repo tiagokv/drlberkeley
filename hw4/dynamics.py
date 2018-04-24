@@ -50,19 +50,22 @@ class NNDynamicsModel:
         self.sy_next_obs_un = tf.placeholder(tf.float32, shape=[None, obs_dim], name='next_obs_un')
 
         mean_obs, std_obs, mean_deltas, std_deltas, mean_action, std_action = normalization
-        episilon = 1e-8
+        episilon = 1e-10
         sy_obs = (self.sy_obs_un - mean_obs) / (std_obs + episilon)
         sy_act = (self.sy_act_un - mean_action) / (std_action + episilon)
-        # sy_next_obs = (self.sy_next_obs_un - mean_obs) / (std_obs + episilon)
 
         # Concatenate to simulate f(s,a)
         sy_in = tf.concat([sy_obs, sy_act], axis=1)
 
         # Define model
         sy_out_un = build_mlp(sy_in, obs_dim, 'nn', n_layers, size, activation, output_activation)
+
+        sy_delta_un = self.sy_next_obs_un - self.sy_obs_un
+        self.sy_delta = (sy_delta_un - mean_deltas) / (std_deltas + episilon)
+        self.loss = tf.losses.mean_squared_error(self.sy_delta, sy_out_un)
+
         self.sy_out = mean_deltas + std_deltas * sy_out_un + self.sy_obs_un
 
-        self.loss = tf.losses.mean_squared_error(self.sy_next_obs_un, self.sy_out)
         self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
     def fit(self, data):
@@ -79,17 +82,18 @@ class NNDynamicsModel:
         qtt_batches = int(np.ceil(len(obs) / self.batch_size))
 
         losses = []
-        for i in range(self.iterations):
-            loss_avg_batches = 0
-            for x in range(qtt_batches):
-                start = x * self.batch_size
-                end = (x+1) * self.batch_size
-                loss, _ = self.sess.run([self.loss, self.optimizer], feed_dict={self.sy_obs_un: obs[start:end],
-                                                                                self.sy_act_un: act[start:end],
-                                                                                self.sy_next_obs_un: next_obs[start:end]})
-                loss_avg_batches += loss
-            loss_avg_batches /= qtt_batches
-            losses.append(loss_avg_batches)
+        for i in range(self.iterations):     
+          loss_avg_batches = 0
+          for x in range(qtt_batches):
+              start = x * self.batch_size
+              end = (x+1) * self.batch_size
+              _, loss = self.sess.run([self.optimizer, self.loss], 
+                                      feed_dict={self.sy_obs_un: obs[start:end],
+                                                 self.sy_act_un: act[start:end],
+                                                 self.sy_next_obs_un: next_obs[start:end]})
+              loss_avg_batches += loss
+          loss_avg_batches /= qtt_batches
+          losses.append(loss_avg_batches)
         return losses
 
     def predict(self, states, actions):

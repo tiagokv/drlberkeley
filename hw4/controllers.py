@@ -41,24 +41,22 @@ class MPCcontroller(Controller):
     def get_action(self, state):
         """ YOUR CODE HERE """
         """ Note: be careful to batch your simulations through the model for speed """
-        current_states = np.zeros((self.num_simulated_paths, self.horizon, self.env.observation_space.shape[0]))
-        actions = np.zeros((self.num_simulated_paths, self.horizon, self.env.action_space.shape[0]))
-        next_states = np.zeros((self.num_simulated_paths, self.horizon, self.env.observation_space.shape[0]))
-        current_states[:, 0, :] = state
+        current_states = np.zeros((self.horizon, self.num_simulated_paths, self.env.observation_space.shape[0]))
+        actions = np.zeros((self.horizon, self.num_simulated_paths, self.env.action_space.shape[0]))
+        next_states = np.zeros((self.horizon, self.num_simulated_paths, self.env.observation_space.shape[0]))
+        current_states[0, :, :] = state
         for h in range(self.horizon):
             # change for np.random.uniform
-            actions[:, h, :] = np.random.uniform(self.env.action_space.low,
+            actions[h, :, :] = np.random.uniform(self.env.action_space.low,
                                                  self.env.action_space.high,
                                                  (self.num_simulated_paths, self.env.action_space.shape[0]))
 
-            next_states[:, h, :] = self.dyn_model.predict(current_states[:, h, :], actions[:, h, :])
+            next_states[h, :, :] = self.dyn_model.predict(current_states[h, :, :], actions[h, :, :])
             # change next current state with next states
             if h < self.horizon - 1:
-                current_states[:, h + 1, :] = next_states[:, h, :]
+                current_states[h + 1, :, :] = next_states[h, :, :]
 
-        traj_costs_paths = []
-        for p in range(self.num_simulated_paths):
-            traj_costs_paths.append(trajectory_cost_fn(self.cost_fn, current_states[p], actions[p], next_states[p]))
-
-        min_cost = np.argmin(traj_costs_paths)
-        return actions[min_cost][0]
+        tc = trajectory_cost_fn(self.cost_fn, current_states, actions, next_states)
+        min_cost = np.argmin(tc)
+        
+        return actions[0][min_cost]
